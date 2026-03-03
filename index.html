@@ -607,9 +607,29 @@ function renderRollouts(){
     <div class="metric-box"><div class="metric-label">Rubric</div><div class="metric-val ${rPct>=.7?'ok':rPct>=.4?'mid':'bad'}">${rScore}</div><div style="font-size:11px;color:var(--g500)">${rGrade}</div></div>
   </div>`;
 
-  // PROMPT (after overview stats) — decode literal escape sequences
-  const promptText=env.task.replace(/^\s+/,'').replace(/\\n/g,'\n').replace(/\\u201[0-9a-fA-F]/g,m=>String.fromCharCode(parseInt(m.slice(2),16))).replace(/\\t/g,'\t');
-  h+=`<div class="card"><div class="card-title"><div class="dot" style="background:var(--orange)"></div>PROMPT</div><div class="prompt-box">${esc(promptText)}</div></div>`;
+  // PROMPT (after overview stats) — decode escape sequences and split system vs user task
+  const rawPrompt=env.task.replace(/^\s+/,'').replace(/\\n/g,'\n').replace(/\\u([0-9a-fA-F]{4})/g,(_,hex)=>String.fromCharCode(parseInt(hex,16))).replace(/\\t/g,'\t');
+  // Split: everything before the last double-newline-separated block with "Services available" or the actual task instruction is system context
+  // For HR: task starts after the conventions section, identifiable by not starting with boilerplate
+  let userTask=rawPrompt, sysContext='';
+  const svcIdx=rawPrompt.indexOf('Services available');
+  if(rawPrompt.startsWith('You are a helpful assistant')){
+    // Find the actual task: it's between the conventions and "Services available"
+    const chunks=rawPrompt.split(/\n\n+/);
+    const taskChunks=[],ctxChunks=[];
+    let foundTask=false;
+    chunks.forEach(c=>{
+      const t=c.trim();
+      if(!foundTask&&(t.startsWith('You are')||t.startsWith('Instructions:')||t.startsWith('# ')||t.startsWith('## ')||t.startsWith('- ')||t.startsWith('These are standard')))ctxChunks.push(t);
+      else{foundTask=true;taskChunks.push(t);}
+    });
+    userTask=taskChunks.join('\n\n');
+    sysContext=ctxChunks.join('\n\n');
+  }
+  h+=`<div class="card"><div class="card-title"><div class="dot" style="background:var(--orange)"></div>TASK</div><div class="prompt-box">${esc(userTask)}</div></div>`;
+  if(sysContext){
+    h+=`<div class="rsection"><div class="rsection-header" onclick="toggle('sysctx')"><h3>SYSTEM INSTRUCTIONS</h3><span class="badge badge-info badge-lg">Conventions & tools</span><span class="chevron-toggle" id="sysctx-ch">&#9660;</span></div><div class="collapsible" id="sysctx" style="max-height:0"><div class="md-content" style="border-radius:0;border:none;border-top:1px solid var(--g200);max-height:none">${md(sysContext)}</div></div></div>`;
+  }
 
   // LLM ANNOTATION
   if(rubric){
